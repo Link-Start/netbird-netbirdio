@@ -4125,8 +4125,9 @@ func TestDefaultAccountManager_UpdateAccountSettings_IPv6EnabledGroups(t *testin
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not exist")
 
-	// Allow background UpdateAccountPeers goroutines to complete before test cleanup drops the MySQL database.
-	time.Sleep(100 * time.Millisecond)
+	// UpdateAccountSettings spawns background goroutines (go am.UpdateAccountPeers) on IPv6 group changes.
+	// Wait for them to finish before test cleanup drops the MySQL database.
+	time.Sleep(time.Second)
 }
 
 func TestUpdateUserAuthWithSingleMode(t *testing.T) {

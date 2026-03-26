@@ -433,7 +433,8 @@ func (am *DefaultAccountManager) UpdateAccountSettings(ctx context.Context, acco
 }
 
 func ipv6SettingsChanged(oldSettings, newSettings *types.Settings) bool {
-	if oldSettings.NetworkRangeV6 != newSettings.NetworkRangeV6 {
+	// A zero-value NetworkRangeV6 in newSettings means "don't change", not "clear".
+	if newSettings.NetworkRangeV6.IsValid() && oldSettings.NetworkRangeV6 != newSettings.NetworkRangeV6 {
 		return true
 	}
 	oldGroups := slices.Clone(oldSettings.IPv6EnabledGroups)
