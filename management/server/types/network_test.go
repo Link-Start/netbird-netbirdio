@@ -262,3 +262,39 @@ func TestAllocateRandomPeerIPv6_NonByteBoundary(t *testing.T) {
 		assert.Equal(t, prefixBytes[7]&0xf0, b[7]&0xf0, "partial byte network bits should be preserved for /60")
 	}
 }
+
+func TestAllocateRandomPeerIPv6_AvoidsAllZerosAllOnesHost(t *testing.T) {
+	// /64 is byte-aligned, /60 is not: both should avoid all-zeros and all-ones host parts.
+	prefixes := []string{"fd00::/64", "fd00:abc0::/60"}
+	for _, p := range prefixes {
+		prefix := netip.MustParsePrefix(p)
+		for i := 0; i < 200; i++ {
+			ip, err := AllocateRandomPeerIPv6(prefix)
+			require.NoError(t, err)
+
+			b := ip.As16()
+			ones := prefix.Bits()
+			hostStart := ones / 8
+			partialBits := ones % 8
+
+			hostSlice := make([]byte, 16-hostStart)
+			copy(hostSlice, b[hostStart:])
+			if partialBits > 0 {
+				hostSlice[0] &= 0xff >> partialBits
+			}
+
+			allZero := true
+			allOnes := true
+			for _, v := range hostSlice {
+				if v != 0 {
+					allZero = false
+				}
+				if v != 0xff {
+					allOnes = false
+				}
+			}
+			assert.False(t, allZero, "host part of %s in %s should not be all zeros", ip, p)
+			assert.False(t, allOnes, "host part of %s in %s should not be all ones", ip, p)
+		}
+	}
+}

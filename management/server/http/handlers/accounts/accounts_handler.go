@@ -99,6 +99,9 @@ func (h *handler) parseAndValidateNetworkRange(ctx context.Context, accountID, u
 	if requireV6 && !prefix.Addr().Is6() {
 		return netip.Prefix{}, status.Errorf(status.InvalidArgument, "network range must be an IPv6 address")
 	}
+	if !requireV6 && prefix.Addr().Is6() {
+		return netip.Prefix{}, status.Errorf(status.InvalidArgument, "network range must be an IPv4 address")
+	}
 	if err := h.validateNetworkRange(ctx, accountID, userID, prefix); err != nil {
 		return netip.Prefix{}, err
 	}

@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
 
@@ -280,40 +281,23 @@ func AllocateRandomPeerIPv6(prefix netip.Prefix) (netip.Addr, error) {
 		ip[i] = byte(rng.Intn(256))
 	}
 
-	// Avoid all-zeros and all-ones host parts
+	// Avoid all-zeros and all-ones host parts.
+	// Mask off network bits in the partial byte so only host bits are checked.
 	hostStart := ones / 8
-	if isZeroSuffix(ip[hostStart:]) || isAllOnesSuffix(ip[hostStart:]) {
+	hostSlice := slices.Clone(ip[hostStart:])
+	if partialBits > 0 {
+		hostSlice[0] &= 0xff >> partialBits
+	}
+	allZero := !slices.ContainsFunc(hostSlice, func(v byte) bool { return v != 0 })
+	allOnes := !slices.ContainsFunc(hostSlice, func(v byte) bool { return v != 0xff })
+	if allZero || allOnes {
 		ip[15] = 1
 	}
 
 	return netip.AddrFrom16(ip).Unmap(), nil
 }
 
-func isZeroSuffix(b []byte) bool {
-	for _, v := range b {
-		if v != 0 {
-			return false
-		}
-	}
-	return true
-}
 
-func isAllOnesSuffix(b []byte) bool {
-	for _, v := range b {
-		if v != 0xff {
-			return false
-		}
-	}
-	return true
-}
-
-func ipToUint32(ip net.IP) uint32 {
-	ip = ip.To4()
-	if len(ip) < 4 {
-		return 0
-	}
-	return binary.BigEndian.Uint32(ip)
-}
 
 func uint32ToIP(n uint32) netip.Addr {
 	var b [4]byte

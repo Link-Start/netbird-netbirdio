@@ -94,7 +94,7 @@ func generateRouteFirewallRules(ctx context.Context, route *nbroute.Route, rule 
 		v6Rule.SourceRanges = v6Sources
 		if isDefaultV4 {
 			v6Rule.Destination = "::/0"
-			v6Rule.RouteID = route.ID + "-v6"
+			v6Rule.RouteID = route.ID + "-v6-default"
 		}
 		if len(rule.Ports) == 0 {
 			rules = append(rules, generateRulesWithPortRanges(v6Rule, rule, rulesExists)...)

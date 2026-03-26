@@ -1670,6 +1670,8 @@ func (b *NetworkMapBuilder) calculateRouteFirewallUpdates(
 		}
 
 		b.addRouteFirewallUpdate(updates, info.PeerID, string(routeID), newPeer.IP.String())
+		// TODO: also add newPeer.IPv6 as a source range, but only when the routing peer (info.PeerID) supports IPv6.
+		// Without that check we'd diverge from the full rebuild which filters by the routing peer's capability.
 
 		if processedPeerRoutes[info.PeerID] == nil {
 			processedPeerRoutes[info.PeerID] = make(map[route.ID]struct{})
