@@ -432,12 +432,12 @@ func (am *DefaultAccountManager) UpdateAccountSettings(ctx context.Context, acco
 	return newSettings, nil
 }
 
-func ipv6SettingsChanged(old, new *types.Settings) bool {
-	if old.NetworkRangeV6 != new.NetworkRangeV6 {
+func ipv6SettingsChanged(oldSettings, newSettings *types.Settings) bool {
+	if oldSettings.NetworkRangeV6 != newSettings.NetworkRangeV6 {
 		return true
 	}
-	oldGroups := slices.Clone(old.IPv6EnabledGroups)
-	newGroups := slices.Clone(new.IPv6EnabledGroups)
+	oldGroups := slices.Clone(oldSettings.IPv6EnabledGroups)
+	newGroups := slices.Clone(newSettings.IPv6EnabledGroups)
 	slices.Sort(oldGroups)
 	slices.Sort(newGroups)
 	return !slices.Equal(oldGroups, newGroups)
