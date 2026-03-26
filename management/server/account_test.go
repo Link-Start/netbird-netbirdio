@@ -4024,7 +4024,8 @@ func TestDefaultAccountManager_UpdateAccountSettings_NetworkRangeChange(t *testi
 
 func TestDefaultAccountManager_UpdateAccountSettings_IPv6EnabledGroups(t *testing.T) {
 	manager, _, account, peer1, peer2, peer3 := setupNetworkMapTest(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	accountID := account.Id
 
 	// New accounts default to All group in IPv6EnabledGroups, so all 3 peers should have IPv6.
@@ -4123,6 +4124,9 @@ func TestDefaultAccountManager_UpdateAccountSettings_IPv6EnabledGroups(t *testin
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not exist")
+
+	// Allow background UpdateAccountPeers goroutines to complete before test cleanup drops the MySQL database.
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestUpdateUserAuthWithSingleMode(t *testing.T) {
