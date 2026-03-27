@@ -2296,7 +2296,7 @@ func (am *DefaultAccountManager) updatePeerIPv6Addresses(ctx context.Context, tr
 		return err
 	}
 
-	allowedPeers, err := am.buildIPv6AllowedPeers(ctx, transaction, accountID, settings)
+	allowedPeers, err := am.buildIPv6AllowedPeers(ctx, transaction, accountID, settings, peers)
 	if err != nil {
 		return err
 	}
@@ -2389,7 +2389,7 @@ func allocateIPv6WithRetry(prefix netip.Prefix, taken map[netip.Addr]struct{}, p
 	return netip.Addr{}, fmt.Errorf("allocate v6 for peer %s: exhausted 10 attempts", peerID)
 }
 
-func (am *DefaultAccountManager) buildIPv6AllowedPeers(ctx context.Context, transaction store.Store, accountID string, settings *types.Settings) (map[string]struct{}, error) {
+func (am *DefaultAccountManager) buildIPv6AllowedPeers(ctx context.Context, transaction store.Store, accountID string, settings *types.Settings, peers []*nbpeer.Peer) (map[string]struct{}, error) {
 	if len(settings.IPv6EnabledGroups) == 0 {
 		return make(map[string]struct{}), nil
 	}
@@ -2413,6 +2413,13 @@ func (am *DefaultAccountManager) buildIPv6AllowedPeers(ctx context.Context, tran
 			allowedPeers[peerID] = struct{}{}
 		}
 	}
+
+	for _, peer := range peers {
+		if peer.ProxyMeta.Embedded {
+			allowedPeers[peer.ID] = struct{}{}
+		}
+	}
+
 	return allowedPeers, nil
 }
 
@@ -2566,17 +2573,17 @@ func (am *DefaultAccountManager) updatePeerIPv6InTransaction(ctx context.Context
 		return false, fmt.Errorf("get settings: %w", err)
 	}
 
-	allowedPeers, err := am.buildIPv6AllowedPeers(ctx, transaction, accountID, settings)
+	peer, err := transaction.GetPeerByID(ctx, store.LockingStrengthUpdate, accountID, peerID)
+	if err != nil {
+		return false, fmt.Errorf("get peer: %w", err)
+	}
+
+	allowedPeers, err := am.buildIPv6AllowedPeers(ctx, transaction, accountID, settings, []*nbpeer.Peer{peer})
 	if err != nil {
 		return false, err
 	}
 	if _, ok := allowedPeers[peerID]; !ok {
 		return false, status.Errorf(status.PreconditionFailed, "peer is not in any IPv6-enabled group")
-	}
-
-	peer, err := transaction.GetPeerByID(ctx, store.LockingStrengthUpdate, accountID, peerID)
-	if err != nil {
-		return false, fmt.Errorf("get peer: %w", err)
 	}
 
 	if peer.IPv6.IsValid() && peer.IPv6 == newIPv6 {

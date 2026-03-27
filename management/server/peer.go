@@ -802,15 +802,18 @@ func (am *DefaultAccountManager) AddPeer(ctx context.Context, accountID, setupKe
 		newPeer.IP = freeIP
 
 		if len(settings.IPv6EnabledGroups) > 0 && network.NetV6.IP != nil {
-			var allGroupID string
-			if !peer.ProxyMeta.Embedded {
+			// Embedded proxy peers always get IPv6 when any group has it enabled,
+			assignV6 := peer.ProxyMeta.Embedded
+			if !assignV6 {
+				var allGroupID string
 				if allGroup, err := am.Store.GetGroupByName(ctx, store.LockingStrengthNone, accountID, "All"); err == nil {
 					allGroupID = allGroup.ID
 				} else {
 					log.WithContext(ctx).Debugf("failed to get All group for IPv6 check: %v", err)
 				}
+				assignV6 = peerWillHaveIPv6(settings, peerAddConfig.GroupsToAdd, allGroupID)
 			}
-			if peerWillHaveIPv6(settings, peerAddConfig.GroupsToAdd, allGroupID) {
+			if assignV6 {
 				v6Prefix, err := netip.ParsePrefix(network.NetV6.String())
 				if err != nil {
 					return nil, nil, nil, fmt.Errorf("parse IPv6 prefix: %w", err)
