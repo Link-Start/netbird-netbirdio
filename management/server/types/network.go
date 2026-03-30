@@ -252,11 +252,53 @@ func AllocateRandomPeerIP(prefix netip.Prefix) (netip.Addr, error) {
 	return uint32ToIP(candidate), nil
 }
 
+// ValidateIPv6HostPart checks that addr is within prefix and its host part is
+// not all-zeros or all-ones (subnet/broadcast equivalent). Prefixes shorter
+// than /2 or longer than /126 are rejected because they have fewer than 4
+// usable host addresses.
+func ValidateIPv6HostPart(prefix netip.Prefix, addr netip.Addr) error {
+	ones := prefix.Bits()
+	if ones < 2 || ones > 126 || !prefix.Addr().Is6() {
+		return fmt.Errorf("invalid IPv6 subnet: %s", prefix.String())
+	}
+
+	if !prefix.Contains(addr) {
+		return fmt.Errorf("address %s is not within prefix %s", addr, prefix)
+	}
+
+	ip := addr.As16()
+	hostStart := ones / 8
+	partialBits := ones % 8
+
+	hostSlice := slices.Clone(ip[hostStart:])
+	// Build the maximum host value (all host bits set to 1).
+	maxHost := make([]byte, len(hostSlice))
+	for i := range maxHost {
+		maxHost[i] = 0xff
+	}
+	if partialBits > 0 {
+		hostMask := byte(0xff >> partialBits)
+		hostSlice[0] &= hostMask
+		maxHost[0] = hostMask
+	}
+
+	allZero := !slices.ContainsFunc(hostSlice, func(v byte) bool { return v != 0 })
+	allOnes := slices.Equal(hostSlice, maxHost)
+	if allZero {
+		return fmt.Errorf("address %s has all-zero host part (subnet address)", addr)
+	}
+	if allOnes {
+		return fmt.Errorf("address %s has all-ones host part (broadcast address)", addr)
+	}
+
+	return nil
+}
+
 // AllocateRandomPeerIPv6 picks a random host address within the given IPv6 prefix.
 // Only the host bits (after the prefix length) are randomized.
 func AllocateRandomPeerIPv6(prefix netip.Prefix) (netip.Addr, error) {
 	ones := prefix.Bits()
-	if ones == 0 || !prefix.Addr().Is6() {
+	if ones < 2 || ones > 126 || !prefix.Addr().Is6() {
 		return netip.Addr{}, fmt.Errorf("invalid IPv6 subnet: %s", prefix.String())
 	}
 
@@ -281,20 +323,17 @@ func AllocateRandomPeerIPv6(prefix netip.Prefix) (netip.Addr, error) {
 		ip[i] = byte(rng.Intn(256))
 	}
 
-	// Avoid all-zeros and all-ones host parts.
-	// Mask off network bits in the partial byte so only host bits are checked.
-	hostStart := ones / 8
-	hostSlice := slices.Clone(ip[hostStart:])
-	if partialBits > 0 {
-		hostSlice[0] &= 0xff >> partialBits
-	}
-	allZero := !slices.ContainsFunc(hostSlice, func(v byte) bool { return v != 0 })
-	allOnes := !slices.ContainsFunc(hostSlice, func(v byte) bool { return v != 0xff })
-	if allZero || allOnes {
-		ip[15] = 1
+	addr := netip.AddrFrom16(ip).Unmap()
+
+	// If we landed on a reserved host part, fix by toggling the lowest host bit.
+	// XOR flips 0->1 for all-zeros and 1->0 for all-ones, producing a valid
+	// host for any prefix up to /126 while preserving all network bits.
+	if err := ValidateIPv6HostPart(prefix, addr); err != nil {
+		ip[15] ^= 1
+		addr = netip.AddrFrom16(ip).Unmap()
 	}
 
-	return netip.AddrFrom16(ip).Unmap(), nil
+	return addr, nil
 }
 
 

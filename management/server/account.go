@@ -2568,6 +2568,14 @@ func (am *DefaultAccountManager) updatePeerIPv6InTransaction(ctx context.Context
 		return false, status.Errorf(status.InvalidArgument, "IP %s is not within the account IPv6 range %s", newIPv6, network.NetV6.String())
 	}
 
+	if addr, ok := netip.AddrFromSlice(network.NetV6.IP); ok {
+		ones, _ := network.NetV6.Mask.Size()
+		v6Prefix := netip.PrefixFrom(addr.Unmap(), ones)
+		if err := types.ValidateIPv6HostPart(v6Prefix, newIPv6); err != nil {
+			return false, status.Errorf(status.InvalidArgument, "invalid IPv6 address: %v", err)
+		}
+	}
+
 	settings, err := transaction.GetAccountSettings(ctx, store.LockingStrengthShare, accountID)
 	if err != nil {
 		return false, fmt.Errorf("get settings: %w", err)

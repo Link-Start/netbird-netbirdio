@@ -298,3 +298,137 @@ func TestAllocateRandomPeerIPv6_AvoidsAllZerosAllOnesHost(t *testing.T) {
 		}
 	}
 }
+
+func TestAllocateRandomPeerIPv6_NarrowPrefixes(t *testing.T) {
+	// Narrow prefixes (/124, /126) have very few host bits. The fallback must
+	// still produce addresses within the prefix and avoid subnet/broadcast.
+	tests := []struct {
+		name      string
+		cidr      string
+		hostBits  int
+		validHost int // number of usable host addresses
+	}{
+		{"/124 has 4 host bits, 14 usable", "fd00:abcd::/124", 4, 14},
+		{"/126 has 2 host bits, 2 usable", "fd00:abcd::/126", 2, 2},
+		{"/120 byte-aligned", "fd00:abcd::/120", 8, 254},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix := netip.MustParsePrefix(tt.cidr)
+			for i := 0; i < 500; i++ {
+				ip, err := AllocateRandomPeerIPv6(prefix)
+				require.NoError(t, err)
+				assert.True(t, prefix.Contains(ip), "IP %s should be within %s", ip, prefix)
+				require.NoError(t, ValidateIPv6HostPart(prefix, ip),
+					"IP %s should pass host-part validation for %s", ip, prefix)
+			}
+		})
+	}
+}
+
+func TestAllocateRandomPeerIPv6_RejectsTooNarrow(t *testing.T) {
+	// /127 and /128 have fewer than 4 usable addresses and must be rejected.
+	for _, cidr := range []string{"fd00::/127", "fd00::/128", "fd00::/0"} {
+		prefix := netip.MustParsePrefix(cidr)
+		_, err := AllocateRandomPeerIPv6(prefix)
+		assert.Error(t, err, "should reject prefix %s", cidr)
+	}
+}
+
+func TestValidateIPv6HostPart(t *testing.T) {
+	tests := []struct {
+		name    string
+		prefix  string
+		addr    string
+		wantErr string
+	}{
+		{
+			name:   "valid host in /64",
+			prefix: "fd00::/64",
+			addr:   "fd00::1",
+		},
+		{
+			name:   "valid host in /126",
+			prefix: "fd00::/126",
+			addr:   "fd00::1",
+		},
+		{
+			name:   "valid host in /126, second usable",
+			prefix: "fd00::/126",
+			addr:   "fd00::2",
+		},
+		{
+			name:    "all-zero host /64 (subnet address)",
+			prefix:  "fd00::/64",
+			addr:    "fd00::",
+			wantErr: "all-zero host part",
+		},
+		{
+			name:    "all-ones host /64 (broadcast)",
+			prefix:  "fd00::/64",
+			addr:    "fd00::ffff:ffff:ffff:ffff",
+			wantErr: "all-ones host part",
+		},
+		{
+			name:    "all-zero host /126 (subnet address)",
+			prefix:  "fd00::/126",
+			addr:    "fd00::",
+			wantErr: "all-zero host part",
+		},
+		{
+			name:    "all-ones host /126 (broadcast)",
+			prefix:  "fd00::/126",
+			addr:    "fd00::3",
+			wantErr: "all-ones host part",
+		},
+		{
+			name:    "outside prefix",
+			prefix:  "fd00::/64",
+			addr:    "fd01::1",
+			wantErr: "not within prefix",
+		},
+		{
+			name:    "prefix too narrow /127",
+			prefix:  "fd00::/127",
+			addr:    "fd00::1",
+			wantErr: "invalid IPv6 subnet",
+		},
+		{
+			name:    "prefix too narrow /128",
+			prefix:  "fd00::/128",
+			addr:    "fd00::",
+			wantErr: "invalid IPv6 subnet",
+		},
+		{
+			name:   "non-byte-boundary /124 valid",
+			prefix: "fd00::/124",
+			addr:   "fd00::5",
+		},
+		{
+			name:    "non-byte-boundary /124 subnet",
+			prefix:  "fd00::/124",
+			addr:    "fd00::",
+			wantErr: "all-zero host part",
+		},
+		{
+			name:    "non-byte-boundary /124 broadcast",
+			prefix:  "fd00::/124",
+			addr:    "fd00::f",
+			wantErr: "all-ones host part",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix := netip.MustParsePrefix(tt.prefix)
+			addr := netip.MustParseAddr(tt.addr)
+			err := ValidateIPv6HostPart(prefix, addr)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
